@@ -55,7 +55,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/InstanceLayout.vue'),
     children: [
       { path: '', name: 'InstanceDetail', component: () => import('@/views/InstanceDetail.vue') },
-      { path: 'genes', name: 'InstanceGenes', component: () => import('@/views/InstanceGenes.vue') },
       { path: 'settings', name: 'InstanceSettings', component: () => import('@/views/InstanceSettings.vue') },
     ],
   },
@@ -74,26 +73,6 @@ const routes: RouteRecordRaw[] = [
     path: '/usage',
     name: 'OrgUsage',
     component: () => import('@/views/OrgUsage.vue'),
-  },
-  {
-    path: '/admin/genes',
-    name: 'AdminGenes',
-    component: () => import('@/views/AdminGenes.vue'),
-  },
-  {
-    path: '/gene-market',
-    name: 'GeneMarket',
-    component: () => import('@/views/GeneMarket.vue'),
-  },
-  {
-    path: '/gene-market/gene/:id',
-    name: 'GeneDetail',
-    component: () => import('@/views/GeneDetail.vue'),
-  },
-  {
-    path: '/gene-market/genome/:id',
-    name: 'GenomeDetail',
-    component: () => import('@/views/GenomeDetail.vue'),
   },
   // Legacy redirects
   {

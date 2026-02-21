@@ -349,30 +349,6 @@ async def lifespan(app: FastAPI):
                 ))
                 logger.info("自动迁移：已为 user_llm_configs 表添加 selected_models 列")
 
-        # ── 迁移 13: instances 新增 wp_api_key 列 + 回填 ──
-        col = await conn.execute(text(
-            "SELECT 1 FROM information_schema.columns "
-            "WHERE table_name = 'instances' AND column_name = 'wp_api_key'"
-        ))
-        if col.first() is None:
-            await conn.execute(text(
-                "ALTER TABLE instances ADD COLUMN wp_api_key VARCHAR(96)"
-            ))
-            await conn.execute(text(
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_instances_wp_api_key "
-                "ON instances (wp_api_key) WHERE wp_api_key IS NOT NULL"
-            ))
-            import secrets as _secrets_mod
-            rows = await conn.execute(text(
-                "SELECT id FROM instances WHERE wp_api_key IS NULL AND deleted_at IS NULL"
-            ))
-            for row in rows:
-                await conn.execute(
-                    text("UPDATE instances SET wp_api_key = :key WHERE id = :id"),
-                    {"key": f"clawbuddy-wp-{_secrets_mod.token_hex(32)}", "id": row.id},
-                )
-            logger.info("自动迁移：已为 instances 表添加 wp_api_key 列并回填")
-
     # ── 迁移 5e: 种子数据（默认组织 + 套餐 + 数据归属） ──
     async with async_session_factory() as db:
         from app.models.org_membership import OrgMembership, OrgRole
@@ -458,116 +434,6 @@ async def lifespan(app: FastAPI):
             db.add_all(seed_plans)
             await db.commit()
             logger.info("自动迁移：已种子化 3 个套餐")
-
-        # 种子基因（幂等）
-        from app.models.gene import Gene, Genome
-        gene_result = await db.execute(select(Gene).limit(1))
-        if gene_result.scalar_one_or_none() is None:
-            import json as _json
-            seed_genes = [
-                Gene(
-                    name="Meta-Learning", slug="meta-learning",
-                    description="赋予 Agent 自主学习能力。安装后 Agent 可以评估基因内容并自主决定直接安装或深度学习，还能识别群聊中的基因推荐消息并自动响应。",
-                    short_description="Agent 学习能力基因 - 自主决定学习方式",
-                    category="效率", tags=_json.dumps(["能力"]),
-                    source="official", icon="GraduationCap", version="1.0.0",
-                    manifest=_json.dumps({
-                        "skill": {"name": "meta-learning", "content": "# Meta-Learning\n\nalways: true\n\n## Learning Ability\n\nYou can learn new skills/genes. When presented with a gene to learn:\n\n1. Evaluate content complexity and your existing knowledge\n2. Decide: direct install (simple, already understood) or deep learn (complex, novel)\n3. If deep learning: study the content, practice with provided scenarios, generate your personalized version\n4. Self-evaluate understanding (0.0-1.0 score)\n\n## Social Gene Recommendation\n\nWhen you join a workspace or during ongoing collaboration:\n\n1. Analyze the workspace team goals (from workspace description)\n2. Review the current team members' installed genes and capabilities\n3. Identify missing capabilities that would benefit the team\n4. Recommend specific genes to one or more agents (including yourself) via group chat\n5. Format: '@AgentName I recommend you learn the `gene-slug` gene because [reason based on team goals]'\n\n## Responding to Recommendations\n\nWhen another agent recommends a gene to you in chat:\n\n1. Evaluate whether the recommendation aligns with your role and team goals\n2. If relevant, express acceptance and the gene will be auto-installed via the learning channel\n3. If not relevant, explain why and suggest alternatives\n\n## Periodic Self-Evaluation\n\nAfter learning a gene and using it in practice:\n\n1. Periodically assess how much the gene improved your capabilities (every ~10 interactions)\n2. Report self-evaluation scores through the learning channel\n3. If a gene is no longer useful, recommend removal"},
-                    }),
-                    is_featured=True, is_published=True,
-                ),
-                Gene(
-                    name="Meta-Creation", slug="meta-creation",
-                    description="赋予 Agent 创造新基因的能力。Agent 可以从工作经验中提炼方法论，生成完整的基因包（SKILL.md + 配置 + 元数据）。",
-                    short_description="Agent 创造能力基因 - 从经验中提炼新基因",
-                    category="效率", tags=_json.dumps(["能力"]),
-                    source="official", icon="Sparkles", version="1.0.0",
-                    manifest=_json.dumps({
-                        "skill": {"name": "meta-creation", "content": "# Meta-Creation\n\nYou can create new genes from your work experience. When you accumulate enough expertise in a domain:\n\n1. Identify a reusable methodology or skill\n2. Structure it as a complete gene: SKILL.md content + metadata (tags, category, synergies)\n3. Include learning objectives and scenarios for other agents\n4. Submit for review\n\nYou can also mark gene synergies when you discover that two genes work well together."},
-                    }),
-                    synergies=_json.dumps(["meta-learning"]),
-                    is_featured=True, is_published=True,
-                ),
-                Gene(
-                    name="Code Review", slug="code-review",
-                    description="系统化的代码审查方法论，包括安全检查、性能评估、可维护性分析。",
-                    short_description="代码审查能力",
-                    category="开发", tags=_json.dumps(["能力"]),
-                    source="official", icon="FileSearch", version="1.0.0",
-                    manifest=_json.dumps({
-                        "skill": {"name": "code-review", "content": "# Code Review\n\nWhen reviewing code, follow this systematic approach:\n\n1. **Security**: Check for injection, auth bypass, data exposure\n2. **Performance**: Identify N+1 queries, memory leaks, unnecessary computation\n3. **Maintainability**: Assess naming, structure, test coverage\n4. **Best Practices**: Language-specific idioms, design patterns"},
-                        "learning": {
-                            "objectives": ["掌握系统化代码审查流程", "识别常见安全漏洞"],
-                            "scenarios": [{"prompt": "审查一个包含 SQL 拼接的 Python 函数", "context": "Web API 端点", "expected_focus": ["SQL 注入", "参数化查询"]}],
-                        },
-                    }),
-                    synergies=_json.dumps(["security-audit"]),
-                    is_featured=True, is_published=True,
-                ),
-                Gene(
-                    name="Analytical Thinking", slug="analytical-thinking",
-                    description="培养结构化分析思维，先拆解问题再逐步推理。",
-                    short_description="结构化分析思维模式",
-                    category="效率", tags=_json.dumps(["性格"]),
-                    source="official", icon="Brain", version="1.0.0",
-                    manifest=_json.dumps({
-                        "skill": {"name": "analytical-thinking", "content": "# Analytical Thinking\n\nalways: true\n\nApproach every problem systematically:\n1. Decompose into sub-problems\n2. Identify assumptions and constraints\n3. Reason step by step\n4. Validate conclusions against evidence\n5. Consider edge cases and failure modes"},
-                    }),
-                    is_featured=True, is_published=True,
-                ),
-                Gene(
-                    name="Security Audit", slug="security-audit",
-                    description="安全审计能力，识别 OWASP Top 10 漏洞，提出修复建议。",
-                    short_description="安全审计与漏洞识别",
-                    category="安全", tags=_json.dumps(["能力"]),
-                    source="official", icon="Shield", version="1.0.0",
-                    manifest=_json.dumps({
-                        "skill": {"name": "security-audit", "content": "# Security Audit\n\nSystematically audit code and infrastructure for security vulnerabilities:\n\n- OWASP Top 10 checks\n- Authentication and authorization review\n- Input validation and sanitization\n- Cryptographic best practices\n- Secrets management"},
-                        "learning": {
-                            "objectives": ["掌握 OWASP Top 10 漏洞识别"],
-                            "scenarios": [{"prompt": "审计一个 JWT 认证实现", "context": "Node.js Express API", "expected_focus": ["token 验证", "过期处理", "密钥管理"]}],
-                        },
-                    }),
-                    synergies=_json.dumps(["code-review"]),
-                    is_published=True,
-                ),
-                Gene(
-                    name="K8s Architecture", slug="k8s-architecture",
-                    description="Kubernetes 架构知识，包括核心概念、资源编排、网络模型、存储方案。",
-                    short_description="Kubernetes 架构知识体系",
-                    category="运维", tags=_json.dumps(["知识"]),
-                    source="official", icon="Container", version="1.0.0",
-                    manifest=_json.dumps({
-                        "skill": {"name": "k8s-architecture", "content": "# K8s Architecture Knowledge\n\nalways: true\n\nCore Kubernetes concepts:\n- Pod lifecycle, ReplicaSet, Deployment strategies\n- Service types, Ingress controllers, NetworkPolicy\n- PV/PVC, StorageClass, CSI drivers\n- RBAC, ServiceAccount, SecurityContext\n- Helm charts, Kustomize, GitOps"},
-                    }),
-                    is_published=True,
-                ),
-            ]
-            db.add_all(seed_genes)
-            await db.commit()
-            logger.info("自动迁移：已种子化 %d 个基因", len(seed_genes))
-
-            seed_genomes = [
-                Genome(
-                    name="全栈工程师", slug="fullstack-engineer",
-                    description="适合全栈开发 Agent 的基因组合",
-                    short_description="全栈开发能力组合",
-                    icon="Layers",
-                    gene_slugs=_json.dumps(["code-review", "analytical-thinking", "security-audit"]),
-                    is_featured=True, is_published=True,
-                ),
-                Genome(
-                    name="DevOps 工程师", slug="devops-engineer",
-                    description="适合 DevOps/SRE Agent 的基因组合",
-                    short_description="DevOps 能力组合",
-                    icon="Server",
-                    gene_slugs=_json.dumps(["k8s-architecture", "security-audit", "analytical-thinking"]),
-                    is_featured=True, is_published=True,
-                ),
-            ]
-            db.add_all(seed_genomes)
-            await db.commit()
-            logger.info("自动迁移：已种子化 %d 个基因组", len(seed_genomes))
 
     # 预热 K8s 连接池：从 DB 加载所有已连接集群
     async with async_session_factory() as db:
@@ -731,47 +597,9 @@ async def lifespan(app: FastAPI):
     summary_job = SummaryJob(async_session_factory)
     summary_job.start()
 
-    # ── 修复工作区实例 channel plugin 配置 + 恢复 SSE 连接 ──
-    from app.services.sse_listener import sse_listener_manager
-
-    async with async_session_factory() as db:
-        from app.models.instance import Instance
-        ws_agents = await db.execute(
-            select(Instance).where(
-                Instance.workspace_id.isnot(None),
-                Instance.status == "running",
-                Instance.ingress_domain.isnot(None),
-                Instance.deleted_at.is_(None),
-            )
-        )
-        instances = ws_agents.scalars().all()
-
-        from app.services.llm_config_service import deploy_clawbuddy_channel_plugin
-        from app.services.instance_service import restart_instance
-        for inst in instances:
-            try:
-                await deploy_clawbuddy_channel_plugin(inst, db, inst.workspace_id)
-                await restart_instance(inst.id, db)
-                logger.info("已修复 channel plugin 配置并重启: %s", inst.name)
-            except Exception as e:
-                logger.warning("修复 channel plugin 失败（非致命）: %s: %s", inst.name, e)
-
-        for inst in instances:
-            await sse_listener_manager.connect(
-                inst.id, inst.ingress_domain,
-                workspace_id=inst.workspace_id,
-                delay=15,
-            )
-    logger.info(
-        "已恢复 %d 个工作区 SSE 连接",
-        len(sse_listener_manager.connected_instances),
-    )
-
     yield
 
     # ── Shutdown ─────────────────────────────────────
-    await sse_listener_manager.disconnect_all()
-    logger.info("已关闭所有 SSE 连接")
     await summary_job.stop()
     await health_checker.stop()
     await k8s_manager.close_all()
@@ -801,9 +629,8 @@ register_exception_handlers(app)
 # ── Routers ──────────────────────────────────────────
 app.include_router(api_router, prefix="/api/v1")
 
-if settings.DEBUG:
-    from app.api.llm_proxy import router as llm_proxy_router
-    app.include_router(llm_proxy_router, tags=["LLM 代理（开发模式）"])
+from app.api.llm_proxy import router as llm_proxy_router
+app.include_router(llm_proxy_router, tags=["LLM 代理"])
 
 # ── Static files (前端 build 产物) ───────────────────
 # 生产环境：Vite build 后的 dist 目录会被复制到 static/

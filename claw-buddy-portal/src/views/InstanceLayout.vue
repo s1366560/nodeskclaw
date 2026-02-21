@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Circle, Loader2, LayoutDashboard, Settings, Dna } from 'lucide-vue-next'
+import { ArrowLeft, Circle, Loader2, LayoutDashboard, Settings } from 'lucide-vue-next'
 import api from '@/services/api'
 
 const route = useRoute()
@@ -57,15 +57,14 @@ onMounted(fetchBasic)
 
 const navItems = [
   { name: 'InstanceDetail', label: '概览', icon: LayoutDashboard },
-  { name: 'InstanceGenes', label: '基因', icon: Dna },
   { name: 'InstanceSettings', label: '设置', icon: Settings },
 ]
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-3.5rem)] max-w-4xl mx-auto px-6">
-    <!-- Header (固定) -->
-    <div class="shrink-0 flex items-center gap-3 pt-8 pb-4">
+  <div class="max-w-4xl mx-auto px-6 py-8">
+    <!-- Header -->
+    <div class="flex items-center gap-3 mb-6">
       <button class="text-muted-foreground hover:text-foreground transition-colors" @click="router.push('/instances')">
         <ArrowLeft class="w-5 h-5" />
       </button>
@@ -82,8 +81,8 @@ const navItems = [
     </div>
 
     <!-- Body: sidebar + content -->
-    <div class="flex gap-6 flex-1 min-h-0 pb-8">
-      <!-- Left nav (固定) -->
+    <div class="flex gap-6">
+      <!-- Left nav -->
       <nav class="w-40 shrink-0 space-y-1">
         <router-link
           v-for="item in navItems"
@@ -99,8 +98,8 @@ const navItems = [
         </router-link>
       </nav>
 
-      <!-- Content (可滚动) -->
-      <div class="flex-1 min-w-0 overflow-y-auto">
+      <!-- Content -->
+      <div class="flex-1 min-w-0">
         <router-view />
       </div>
     </div>

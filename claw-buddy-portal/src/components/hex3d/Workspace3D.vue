@@ -13,14 +13,13 @@ const props = defineProps<{
   agents: AgentBrief[]
   autoSummary: string
   manualNotes: string
-  selectedAgentId: string | null
-  selectedHex: { q: number, r: number } | null
 }>()
 
 const emit = defineEmits<{
-  (e: 'hex-click', payload: { q: number, r: number, type: 'empty' | 'agent' | 'blackboard', agentId?: string }): void
-  (e: 'agent-dblclick', id: string): void
+  (e: 'agent-click', id: string): void
   (e: 'agent-hover', id: string | null): void
+  (e: 'blackboard-click'): void
+  (e: 'add-agent-click'): void
 }>()
 
 const containerRef = ref<HTMLElement | null>(null)
@@ -33,25 +32,15 @@ const { scene, camera, renderer, addToLoop } = useThreeScene(containerRef, {
 const orbitControls = useOrbitControls(camera, renderer)
 addToLoop(() => orbitControls.update())
 
-const { hoveredId, selectedId, dblclickId } = useHexRaycaster(scene, camera, containerRef, {
+const { hoveredId, selectedId } = useHexRaycaster(scene, camera, containerRef, {
   meshFilter: (obj) => obj.userData?.isHex === true || obj.userData?.hexId != null,
 })
 
 watch(hoveredId, (id) => emit('agent-hover', id))
 watch(selectedId, (id) => {
-  if (!id) return
-  if (id === '__blackboard__') {
-    emit('hex-click', { q: 0, r: 0, type: 'blackboard' })
-  } else if (id.startsWith('empty:')) {
-    const [, qs, rs] = id.split(':')
-    emit('hex-click', { q: Number(qs), r: Number(rs), type: 'empty' })
-  } else {
-    const agent = props.agents.find((a) => a.instance_id === id)
-    if (agent) emit('hex-click', { q: agent.hex_q, r: agent.hex_r, type: 'agent', agentId: id })
-  }
-})
-watch(dblclickId, (id) => {
-  if (id && !id.startsWith('__') && !id.startsWith('empty:')) emit('agent-dblclick', id)
+  if (id === '__blackboard__') emit('blackboard-click')
+  else if (id === '__add_agent__') emit('add-agent-click')
+  else if (id) emit('agent-click', id)
 })
 
 // Environment setup
@@ -74,32 +63,28 @@ const hexMeshes = new Map<string, THREE.Group>()
 
 const HEX_GEO = new THREE.CylinderGeometry(HEX_SIZE * 0.9, HEX_SIZE * 0.9, 0.3, 6)
 
-const STATUS_COLORS_3D: Record<string, number> = {
-  running: 0x4ade80, active: 0x4ade80,
-  thinking: 0xfbbf24, pending: 0xfbbf24,
-  idle: 0x8b8b9e,
-  error: 0xf87171, failed: 0xf87171,
-  restarting: 0xf97316, deploying: 0xf97316, updating: 0xf97316, creating: 0xf97316,
-}
-const DISCONNECTED_COLOR = 0x555566
-
 function createHexMesh(agent: AgentBrief): THREE.Group {
   const group = new THREE.Group()
   const { x, y } = axialToWorld(agent.hex_q, agent.hex_r)
   group.position.set(x, 0.15, y)
-  group.userData = { hexId: agent.instance_id, isHex: true, sseConnected: agent.sse_connected }
+  group.userData = { hexId: agent.instance_id, isHex: true }
 
-  const baseColor = STATUS_COLORS_3D[agent.status] ?? 0xa78bfa
-  const color = agent.sse_connected ? baseColor : DISCONNECTED_COLOR
+  const statusColors: Record<string, number> = {
+    running: 0x4ade80, active: 0x4ade80,
+    thinking: 0xfbbf24, pending: 0xfbbf24,
+    idle: 0x8b8b9e,
+    error: 0xf87171, failed: 0xf87171,
+  }
+  const color = statusColors[agent.status] ?? 0xa78bfa
 
   const mat = new THREE.MeshStandardMaterial({
     color,
     emissive: new THREE.Color(color),
-    emissiveIntensity: agent.sse_connected ? 0.15 : 0.05,
+    emissiveIntensity: 0.15,
     metalness: 0.2,
     roughness: 0.6,
     transparent: true,
-    opacity: agent.sse_connected ? 0.9 : 0.5,
+    opacity: 0.9,
   })
 
   const mesh = new THREE.Mesh(HEX_GEO, mat)
@@ -148,8 +133,8 @@ function createBlackboardMesh(): THREE.Group {
   group.position.set(0, 0.15, 0)
   group.userData = { hexId: '__blackboard__', isHex: true }
 
-  const bbSize = HEX_SIZE * 0.95
-  const bbGeo = new THREE.CylinderGeometry(bbSize, bbSize, 0.15, 6)
+  const bbSize = HEX_SIZE * 1.1
+  const bbGeo = new THREE.CylinderGeometry(bbSize, bbSize, 0.35, 6)
   const bbMat = new THREE.MeshStandardMaterial({
     color: 0x1a1a2e,
     emissive: new THREE.Color(0xa78bfa),
@@ -160,7 +145,7 @@ function createBlackboardMesh(): THREE.Group {
     opacity: 0.9,
   })
   const mesh = new THREE.Mesh(bbGeo, bbMat)
-  mesh.raycast = () => {}
+  mesh.userData = { hexId: '__blackboard__', isHex: true }
   group.add(mesh)
 
   const edgeGeo = new THREE.EdgesGeometry(bbGeo)
@@ -170,34 +155,30 @@ function createBlackboardMesh(): THREE.Group {
     opacity: 0.5,
   })
   const edges = new THREE.LineSegments(edgeGeo, edgeMat)
+  edges.userData = { hexId: '__blackboard__', isHex: true }
   group.add(edges)
-
-  const hitMat = new THREE.MeshBasicMaterial({ visible: false })
-  const hitMesh = new THREE.Mesh(HEX_GEO, hitMat)
-  hitMesh.userData = { hexId: '__blackboard__', isHex: true }
-  group.add(hitMesh)
 
   return group
 }
 
-const GRID_RANGE = 8
-const EMPTY_HEX_GEO = new THREE.CylinderGeometry(HEX_SIZE * 0.9, HEX_SIZE * 0.9, 0.05, 6)
-
-function createEmptyHexMesh(q: number, r: number): THREE.Group {
+function createAddAgentMesh(q: number, r: number): THREE.Group {
   const group = new THREE.Group()
   const { x, y } = axialToWorld(q, r)
-  group.position.set(x, 0.025, y)
-  const hexId = `empty:${q}:${r}`
-  group.userData = { hexId, isHex: true }
+  group.position.set(x, 0.15, y)
+  group.userData = { hexId: '__add_agent__', isHex: true }
 
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x1a1a3e,
+    color: 0x333355,
+    emissive: new THREE.Color(0x555577),
+    emissiveIntensity: 0.1,
     transparent: true,
-    opacity: 0.0,
+    opacity: 0.4,
+    wireframe: true,
   })
-  const mesh = new THREE.Mesh(EMPTY_HEX_GEO, mat)
-  mesh.userData = { hexId, isHex: true }
+  const mesh = new THREE.Mesh(HEX_GEO, mat)
+  mesh.userData = { hexId: '__add_agent__', isHex: true }
   group.add(mesh)
+
   return group
 }
 
@@ -220,85 +201,57 @@ function syncScene() {
   scene.add(bbGroup)
   hexMeshes.set('__blackboard__', bbGroup)
 
-  // Add clickable empty hex meshes for all unoccupied grid positions
-  const occupied = new Set<string>()
-  occupied.add('0:0') // blackboard
-  for (const agent of props.agents) {
-    occupied.add(`${agent.hex_q}:${agent.hex_r}`)
-  }
-  for (let q = -GRID_RANGE; q <= GRID_RANGE; q++) {
-    for (let r = -GRID_RANGE; r <= GRID_RANGE; r++) {
-      if (Math.abs(q) + Math.abs(r) + Math.abs(-q - r) > GRID_RANGE * 2) continue
-      if (occupied.has(`${q}:${r}`)) continue
-      const group = createEmptyHexMesh(q, r)
-      scene.add(group)
-      hexMeshes.set(`empty:${q}:${r}`, group)
+  // Add agent placeholder
+  const nextIdx = props.agents.length
+  const directions: [number, number][] = [[0, -1], [-1, 0], [-1, 1], [0, 1], [1, 0], [1, -1]]
+  let pq = 1, pr = 0, ring = 1
+  const allPositions: [number, number][] = []
+  while (allPositions.length <= nextIdx) {
+    for (const [dq, dr] of directions) {
+      for (let s = 0; s < ring && allPositions.length <= nextIdx; s++) {
+        allPositions.push([pq, pr])
+        pq += dq; pr += dr
+      }
     }
+    ring++; pq++
+  }
+  if (allPositions.length > nextIdx) {
+    const [aq, ar] = allPositions[nextIdx]
+    const addGroup = createAddAgentMesh(aq, ar)
+    scene.add(addGroup)
+    hexMeshes.set('__add_agent__', addGroup)
   }
 }
 
 watch(() => props.agents, syncScene, { deep: true, immediate: true })
 
-// Hover + selection animation
+// Hover animation
 const clock = new THREE.Clock()
 addToLoop(() => {
   const t = clock.getElapsedTime()
   for (const [id, group] of hexMeshes) {
-    if (id === '__blackboard__') {
-      const isHovered = hoveredId.value === '__blackboard__'
-      const isSelectedHex = props.selectedHex?.q === 0 && props.selectedHex?.r === 0
-      const targetY = isHovered ? 0.4 : isSelectedHex ? 0.3 : 0.15
-      group.position.y += (targetY - group.position.y) * 0.1
-
-      const mesh = group.children[0] as THREE.Mesh
-      if (mesh?.material && 'emissiveIntensity' in mesh.material) {
-        const mat = mesh.material as THREE.MeshStandardMaterial
-        mat.emissiveIntensity = isSelectedHex ? 0.7 + Math.sin(t * 3) * 0.15 : isHovered ? 0.5 : 0.2
-      }
-      continue
-    }
-
-    if (id.startsWith('empty:')) {
-      const mesh = group.children[0] as THREE.Mesh
-      if (!mesh?.material) continue
-      const mat = mesh.material as THREE.MeshStandardMaterial
-      const isHovered = hoveredId.value === id
-      const [, qs, rs] = id.split(':')
-      const isSelectedHex = props.selectedHex?.q === Number(qs) && props.selectedHex?.r === Number(rs)
-      mat.opacity = isSelectedHex ? 0.35 : isHovered ? 0.15 : 0.0
-      mat.emissive = isSelectedHex ? new THREE.Color(0x60a5fa) : new THREE.Color(0x4ac8e8)
-      mat.emissiveIntensity = isSelectedHex ? 0.6 + Math.sin(t * 3) * 0.15 : isHovered ? 0.3 : 0
-      continue
-    }
-
+    if (id.startsWith('__')) continue
     const isHovered = hoveredId.value === id
-    const isSelected = props.selectedAgentId === id
-    const isSelectedHex = props.selectedHex?.q !== undefined &&
-      props.agents.some((a) => a.instance_id === id && a.hex_q === props.selectedHex!.q && a.hex_r === props.selectedHex!.r)
-    const targetY = isHovered ? 0.4 : (isSelected || isSelectedHex) ? 0.3 : 0.15
+    const targetY = isHovered ? 0.4 : 0.15
     group.position.y += (targetY - group.position.y) * 0.1
 
     const mesh = group.children[0] as THREE.Mesh
     if (mesh?.material && 'emissiveIntensity' in mesh.material) {
       const mat = mesh.material as THREE.MeshStandardMaterial
       const pulse = Math.sin(t * 2) * 0.1 + 0.15
-      mat.emissiveIntensity = (isSelected || isSelectedHex) ? 0.5 + Math.sin(t * 3) * 0.15 : isHovered ? 0.4 : pulse
+      mat.emissiveIntensity = isHovered ? 0.4 : pulse
     }
   }
 })
 
 onUnmounted(() => {
   HEX_GEO.dispose()
-  EMPTY_HEX_GEO.dispose()
 })
 
 defineExpose({
   zoomIn: () => orbitControls.zoomIn(),
   zoomOut: () => orbitControls.zoomOut(),
   resetView: () => orbitControls.resetView(),
-  panBy: (dx: number, dy: number) => orbitControls.panBy(dx, dy),
-  focusOnPosition: (x: number, z: number) => orbitControls.focusOnPosition(x, z),
-  getCameraXZDirections: () => orbitControls.getCameraXZDirections(),
 })
 </script>
 

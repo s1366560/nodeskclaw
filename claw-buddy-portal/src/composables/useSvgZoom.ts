@@ -23,10 +23,6 @@ export function useSvgZoom(
 
     zoomBehavior = zoom<SVGSVGElement, unknown>()
       .scaleExtent([options?.minZoom ?? 0.3, options?.maxZoom ?? 3])
-      .filter((event) => event.type !== 'dblclick')
-      .wheelDelta((event) =>
-        -event.deltaY * (event.deltaMode === 1 ? 0.05 : event.deltaMode ? 1 : 0.002),
-      )
       .on('zoom', (event) => {
         const t = event.transform
         transform.value = { x: t.x, y: t.y, k: t.k }
@@ -54,12 +50,6 @@ export function useSvgZoom(
     select(svg).transition().duration(300).call(zoomBehavior.transform, zoomIdentity)
   }
 
-  function panBy(dx: number, dy: number) {
-    const svg = svgRef.value
-    if (!svg || !zoomBehavior) return
-    select(svg).transition().duration(150).call(zoomBehavior.translateBy, -dx * 80, -dy * 80)
-  }
-
   onMounted(init)
   onUnmounted(() => {
     if (svgRef.value) {
@@ -67,5 +57,5 @@ export function useSvgZoom(
     }
   })
 
-  return { transform, transformStr, zoomIn, zoomOut, resetView, panBy }
+  return { transform, transformStr, zoomIn, zoomOut, resetView }
 }

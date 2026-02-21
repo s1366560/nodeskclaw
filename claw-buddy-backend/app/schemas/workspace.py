@@ -1,4 +1,4 @@
-"""Pydantic schemas for Workspace, Blackboard, Agent, Chat, and Webhook APIs."""
+"""Pydantic schemas for Workspace, Blackboard, Agent, and Context APIs."""
 
 from datetime import datetime
 
@@ -25,11 +25,9 @@ class AgentBrief(BaseModel):
     instance_id: str
     name: str
     display_name: str | None = None
-    slug: str | None = None
     status: str
     hex_q: int
     hex_r: int
-    sse_connected: bool = False
 
 
 class WorkspaceInfo(BaseModel):
@@ -87,6 +85,67 @@ class UpdateAgentRequest(BaseModel):
     hex_r: int | None = None
 
 
+# ── Context ──────────────────────────────────────────
+
+class ContextEntryCreate(BaseModel):
+    entry_type: str = "knowledge"
+    content: str
+    tags: list[str] = []
+    visibility: str = "workspace"
+    target_instance_ids: list[str] = []
+    ttl_hours: int = 24
+
+
+class ContextEntryInfo(BaseModel):
+    id: str
+    workspace_id: str
+    source_instance_id: str
+    entry_type: str
+    content: str
+    tags: list[str]
+    visibility: str
+    target_instance_ids: list[str]
+    ttl_hours: int
+    expires_at: datetime
+    created_at: datetime
+
+
+# ── Agent Share/Subscribe Config ─────────────────────
+
+class AgentShareConfigInfo(BaseModel):
+    instance_id: str
+    workspace_id: str
+    share_enabled: bool
+    share_frequency: str
+    share_types: list[str]
+    custom_instruction: str
+    publish_tags: list[str]
+
+
+class AgentShareConfigUpdate(BaseModel):
+    share_enabled: bool | None = None
+    share_frequency: str | None = None
+    share_types: list[str] | None = None
+    custom_instruction: str | None = None
+    publish_tags: list[str] | None = None
+
+
+class AgentSubscriptionInfo(BaseModel):
+    instance_id: str
+    workspace_id: str
+    subscribe_tags: list[str]
+    subscribe_types: list[str]
+    subscribe_agents: list[str]
+    max_entries: int
+
+
+class AgentSubscriptionUpdate(BaseModel):
+    subscribe_tags: list[str] | None = None
+    subscribe_types: list[str] | None = None
+    subscribe_agents: list[str] | None = None
+    max_entries: int | None = None
+
+
 # ── Workspace Members (RBAC) ────────────────────────
 
 class WorkspaceMemberInfo(BaseModel):
@@ -112,23 +171,3 @@ class WorkspaceMemberUpdate(BaseModel):
 class ChatMessageRequest(BaseModel):
     message: str
     history: list[dict] = []
-
-
-class WorkspaceChatRequest(BaseModel):
-    message: str
-    mentions: list[str] | None = None
-
-
-class WorkspaceMessageInfo(BaseModel):
-    id: str
-    workspace_id: str
-    sender_type: str
-    sender_id: str
-    sender_name: str
-    content: str
-    message_type: str
-    target_instance_id: str | None = None
-    depth: int = 0
-    created_at: datetime
-
-

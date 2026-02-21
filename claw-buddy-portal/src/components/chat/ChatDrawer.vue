@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { ref, watch } from 'vue'
 import ChatPanel from './ChatPanel.vue'
-import { X, MessageSquare } from 'lucide-vue-next'
+import { X } from 'lucide-vue-next'
 
 const props = defineProps<{
   open: boolean
   workspaceId: string
-  workspaceName: string
+  agentId: string
+  agentName: string
 }>()
 
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -21,9 +23,8 @@ const emit = defineEmits<{ (e: 'close'): void }>()
       <!-- Header -->
       <div class="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
         <div class="flex items-center gap-2">
-          <MessageSquare class="w-4 h-4 text-primary" />
-          <span class="text-sm font-medium">{{ workspaceName }}</span>
-          <span class="text-xs text-muted-foreground">Group Chat</span>
+          <div class="w-2 h-2 rounded-full bg-green-400" />
+          <span class="text-sm font-medium">{{ agentName }}</span>
         </div>
         <button
           class="p-1 rounded hover:bg-muted transition-colors"
@@ -36,6 +37,7 @@ const emit = defineEmits<{ (e: 'close'): void }>()
       <!-- Chat -->
       <ChatPanel
         :workspace-id="workspaceId"
+        :agent-id="agentId"
         class="flex-1 min-h-0"
       />
     </div>

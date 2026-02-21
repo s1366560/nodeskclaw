@@ -231,7 +231,7 @@ def build_deployment(
     pvc_name: str | None = None,
     cpu_request: str = "500m",
     cpu_limit: str = "2",
-    mem_request: str = "2Gi",
+    mem_request: str = "512Mi",
     mem_limit: str = "2Gi",
     port: int = 18789,
     env_vars: dict[str, str] | None = None,
@@ -319,10 +319,7 @@ def build_deployment(
     container = V1Container(
         name=name,
         image=image,
-        ports=[
-            V1ContainerPort(container_port=port),
-            V1ContainerPort(container_port=9721, name="sse"),
-        ],
+        ports=[V1ContainerPort(container_port=port)],
         env=env or None,
         resources=V1ResourceRequirements(
             requests={"cpu": cpu_request, "memory": mem_request},
@@ -455,15 +452,12 @@ def build_service(
     labels: dict,
     port: int = 18789,
 ) -> V1Service:
-    """构建 ClusterIP Service，端口默认 18789（OpenClaw Gateway）+ 9721（SSE）。"""
+    """构建 ClusterIP Service，端口默认 18789（OpenClaw Gateway 端口）。"""
     return V1Service(
         metadata=V1ObjectMeta(name=name, namespace=namespace, labels=labels),
         spec=V1ServiceSpec(
             selector={"app.kubernetes.io/name": labels["app.kubernetes.io/name"]},
-            ports=[
-                V1ServicePort(port=port, target_port=port, protocol="TCP", name="gateway"),
-                V1ServicePort(port=9721, target_port=9721, protocol="TCP", name="sse"),
-            ],
+            ports=[V1ServicePort(port=port, target_port=port, protocol="TCP")],
             type="ClusterIP",
         ),
     )
@@ -487,10 +481,11 @@ def build_ingress(
     svc_name = service_name or name
 
     annotations: dict[str, str] = {
-        "nginx.ingress.kubernetes.io/proxy-read-timeout": "86400",
+        # WebSocket 长连接支持（OpenClaw 需要 WebSocket）
+        "nginx.ingress.kubernetes.io/proxy-read-timeout": "3600",
         "nginx.ingress.kubernetes.io/proxy-send-timeout": "3600",
         "nginx.ingress.kubernetes.io/proxy-http-version": "1.1",
-        "nginx.ingress.kubernetes.io/proxy-buffering": "off",
+        # WebSocket 升级头由 Ingress Controller 全局配置处理，无需单独指定 proxy-set-headers
     }
 
     # TLS 配置
@@ -515,16 +510,6 @@ def build_ingress(
                     http=V1HTTPIngressRuleValue(
                         paths=[
                             V1HTTPIngressPath(
-                                path="/sse/",
-                                path_type="Prefix",
-                                backend=V1IngressBackend(
-                                    service=V1IngressServiceBackend(
-                                        name=svc_name,
-                                        port=V1ServiceBackendPort(number=9721),
-                                    )
-                                ),
-                            ),
-                            V1HTTPIngressPath(
                                 path="/",
                                 path_type="Prefix",
                                 backend=V1IngressBackend(
@@ -533,7 +518,7 @@ def build_ingress(
                                         port=V1ServiceBackendPort(number=port),
                                     )
                                 ),
-                            ),
+                            )
                         ]
                     ),
                 )
